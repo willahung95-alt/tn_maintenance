@@ -381,7 +381,17 @@
   <div class="modal" id="doneModal">
     <h3 style="margin-top:0;">完工申報</h3>
     <div style="margin-bottom:10px;"><label>實際完工日</label><input type="date" id="mDoneDate" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:8px;"></div>
-    <div style="margin-bottom:15px;"><label>維護工程師 (執行者)</label><select id="mEngName" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:8px;"><option value="Willa">Willa</option><option value="Charlie">Charlie</option><option value="Lindsay">Lindsay</option><option value="Johnson">Johnson</option><option value="Isaac">Isaac</option></select></div>
+    <div style="margin-bottom:15px;"><label>維護工程師 (執行者)</label>
+      <select id="mEngName" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:8px;">
+          <option value="Eason">Eason</option>
+          <option value="Gary">Gary</option>
+          <option value="Isaac">Isaac</option>
+          <option value="Johnson">Johnson</option>
+          <option value="Willa">Willa</option>
+          <option value="Charlie">Charlie</option>
+          <option value="Jin">Jin</option>
+          <option value="Lindsay">Lindsay</option>
+      </select></div>
     <div style="display:flex; gap:10px;"><button id="mSave" type="button" class="btn btn-primary" style="flex:1;">提交</button><button type="button" onclick="closeModal()" class="btn btn-outline" style="flex:1;">取消</button></div>
   </div>
 
@@ -1099,6 +1109,7 @@ if (!confirm(confirmMsg)) return;
 </script>
 </body>
 </html>
+
 
 
 
