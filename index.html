@@ -317,7 +317,6 @@
               <div>
                 <label style="font-size:0.85rem;">業務</label>
                 <select id="salesName" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);">
-                    <option value="">請選擇</option>
                     <option value="Mandy">Mandy</option>
                     <option value="Anyen">Anyen</option>
                     <option value="Jenny">Jenny</option>
@@ -330,7 +329,6 @@
             <div style="margin-bottom:12px;">
                 <label style="font-size:0.85rem;">維護工程師</label>
                 <select id="engineer" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);">
-                    <option value="">請選擇</option>
                     <option value="Eason">Eason</option>
                     <option value="Gary">Gary</option>
                     <option value="Isaac">Isaac</option>
@@ -737,6 +735,13 @@ data-tooltip="${noteTooltip}"
   }
 
 
+  // 取得目前維護月份模式（季維護 / 月維護）
+  function getCycleLabel_() {
+    const isMonthly = document.getElementById('cycleMonth')?.checked;
+    return isMonthly ? "月維護" : "季維護";
+  }
+
+
   // 判斷既有月份清單是否為「每月連續」
   function isConsecutiveMonthly_(ymList) {
     if (!ymList || ymList.length < 2) return false;
@@ -973,15 +978,63 @@ data-tooltip="${noteTooltip}"
         await save(); 
         return;
     }
+
+
+    // ====== ✅ 新增/編輯維護：必填檢查 + 儲存前確認 ======
+    const customer = document.getElementById('customer').value.trim();
+    const product = document.getElementById('product').value.trim();
+    const salesName = document.getElementById('salesName').value.trim();
+    const engineer = document.getElementById('engineer').value.trim();
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+
+    const missing = [];
+    if (!customer) missing.push("客戶名稱");
+    if (!product) missing.push("產品");
+    if (!salesName) missing.push("業務");
+    if (!engineer) missing.push("維護工程師");
+    if (!startDate) missing.push("維護起日");
+    if (!endDate) missing.push("維護訖日");
+
+    if (missing.length > 0) {
+      alert("以下欄位尚未填寫：\n- " + missing.join("\n- "));
+      return;
+    }
+
+    // 起訖日合理性檢查
+    if (new Date(startDate) > new Date(endDate)) {
+      alert("維護起日不可晚於維護訖日，請重新確認日期。");
+      return;
+    }
+
+    // 確保季/月互斥至少要有一個（多一層保險）
+    const cycleQuarter = document.getElementById('cycleQuarter')?.checked;
+    const cycleMonth = document.getElementById('cycleMonth')?.checked;
+    if (!cycleQuarter && !cycleMonth) {
+      alert("請選擇「季維護」或「月維護」。");
+      return;
+    }
+
+    const cycleLabel = getCycleLabel_();
+    const confirmMsg =
+      "請確認以下資訊無誤，按「確定」後將儲存至資料庫：\n\n" +
+      `客戶名稱：${customer}\n` +
+      `產品：${product}\n` +
+      `業務：${salesName}\n` +
+      `維護工程師：${engineer}\n` +
+      `維護起訖日：${startDate}~${endDate}\n` +
+      cycleLabel;
+if (!confirm(confirmMsg)) return;
+    // ====== ✅ 新增/編輯維護：必填檢查 + 儲存前確認（結束） ======
     
     const rData = {
       id: editingId || 'ID-' + Date.now(),
-      customer: document.getElementById('customer').value,
-      product: document.getElementById('product').value,
-      salesName: document.getElementById('salesName').value,
-      engineer: document.getElementById('engineer').value,
-      startDate: document.getElementById('startDate').value,
-      endDate: document.getElementById('endDate').value,
+      customer,
+      product,
+      salesName,
+      engineer,
+      startDate,
+      endDate,
       notes: quill.root.innerHTML === '<p><br></p>' ? '' : quill.root.innerHTML,
       schedule: editingYMList.map(ym => {
         const old = (records.find(x => x.id === editingId)?.schedule || []).find(s => s.ym === ym);
