@@ -229,7 +229,7 @@
           <button class="mode-btn btn" data-mode="admin" type="button">管理模式</button>
         </div>
         <div id="adminControls" style="display:none; gap:10px;">
-          <button class="btn btn-outline" type="button" onclick="openSystemLog('edit')"><span class="material-symbols-rounded">history_edu</span>發佈日誌</button>
+          <button id="btnPublishLog" class="btn btn-outline" type="button" onclick="openSystemLog('edit')"><span class="material-symbols-rounded">history_edu</span>發佈日誌</button>
           <button class="btn btn-primary" type="button" onclick="openEdit()"><span class="material-symbols-rounded">add</span>新增維護</button>
         </div>
       </div>
@@ -306,12 +306,13 @@
               <div>
                 <label style="font-size:0.85rem;">產品</label>
                 <select id="product" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border);">
+		            <option value="Creo/Windchill">Creo/Windchill</option>		
                     <option value="GoPatrol">GoPatrol</option>
                     <option value="HyperPDM">HyperPDM</option>
                     <option value="i-reporter">i-reporter</option>
                     <option value="PDMC">PDMC</option>
                     <option value="Solid Edge">Solid Edge</option>    
-                    <option value="tms+">tms+</option>    
+                    <option value="tms+">tms+</option> 
                 </select>
               </div>
               <div>
@@ -372,7 +373,7 @@
       </div>
 
       <div id="adminAction" style="display:none;">
-        <button type="submit" class="btn btn-primary" style="width:100%; padding:12px;">儲存並同步至資料庫</button>
+        <button type="submit" class="btn btn-primary" style="width:100%; padding:12px; justify-content:center;">儲存</button>
         <button type="button" id="btnDelete" class="btn btn-outline" style="width:100%; margin-top:10px; color:var(--danger);">刪除紀錄</button>
       </div>
     </form>
@@ -398,7 +399,9 @@
 <script>
   // 請確認 API_URL 是最新的
   const API_URL = "https://script.google.com/macros/s/AKfycbxAWp75DXAjzfMWJuhNPPlD8iny9vPWpjRCddhhZ5Ck6vhVREq5PvbqTJXZv5Tf9B8K/exec?token=otsukakh5501398";
-  const ADMIN_PASSWORD = "admin2153356";
+  const ADMIN_PASSWORD_A = "poweradmin@5501398";   // A：最高管理者（可發佈日誌 + 新增維護）
+  const ADMIN_PASSWORD_B = "admin2153356";      // B：業務（只可新增維護）← 請改成你的 B 密碼
+  let adminRole = "user";                    // "user" | "sales" | "super"
   const VERSION_ID = "SYSTEM_LOG_v6"; 
 
   let records = [], mode = "user", editingId = null, quill, modalTarget = null, editingYMList = [];
@@ -493,7 +496,7 @@
   function resetButtonState() {
       const btn = document.querySelector('#formEdit .btn-primary');
       if (btn) {
-          btn.innerText = "儲存並同步至資料庫";
+          btn.innerText = "儲存";
           btn.disabled = false;
       }
   }
@@ -875,7 +878,13 @@ data-tooltip="${noteTooltip}"
   function openSystemLog(action) {
     resetButtonState();
 
-    editingId = VERSION_ID;
+    // ✅ 權限控管：B 密碼僅可檢視日誌（view），不可發佈/編輯/刪除
+    if (action !== 'view' && adminRole !== 'super') {
+      alert('權限不足：僅最高管理者可發佈日誌。');
+      return;
+    }
+
+editingId = VERSION_ID;
     document.getElementById('drawerTitle').textContent = "系統更新日誌";
     
     // === 檢視模式 ===
@@ -890,7 +899,7 @@ data-tooltip="${noteTooltip}"
         } else {
             const cardsHtml = systemLogs.map(log => {
                 let actionBtns = '';
-                if (mode === 'admin') {
+                if (adminRole === 'super') {
                     actionBtns = `
                     <div class="log-actions">
                         <button type="button" class="btn btn-outline" style="padding:2px 8px; font-size:12px;" onclick="editLogEntry('${log.version}')">編輯</button>
@@ -1027,7 +1036,7 @@ data-tooltip="${noteTooltip}"
 
     const cycleLabel = getCycleLabel_();
     const confirmMsg =
-      "請確認以下資訊無誤，按「確定」後將儲存至資料庫：\n\n" +
+      "請確認以下資訊無誤，按「確定」後將儲存：\n\n" +
       `客戶名稱：${customer}\n` +
       `產品：${product}\n` +
       `業務：${salesName}\n` +
@@ -1088,13 +1097,28 @@ if (!confirm(confirmMsg)) return;
 
   document.getElementById('modeSeg').onclick = async (e) => {
     const b = e.target.closest('button'); if(!b) return;
+
     if (b.dataset.mode === 'admin') {
       const input = await requestPassword("管理者密碼");
-      if (input !== ADMIN_PASSWORD) { if(input !== null) alert("密碼錯誤"); return; }
+      if (input === null) return;
+
+      if (input === ADMIN_PASSWORD_A) adminRole = "super";
+      else if (input === ADMIN_PASSWORD_B) adminRole = "sales";
+      else { alert("密碼錯誤"); return; }
+    } else {
+      adminRole = "user";
     }
+
     mode = b.dataset.mode;
     document.querySelectorAll('.mode-btn').forEach(x => x.classList.toggle('active', x===b));
-    document.getElementById('adminControls').style.display = mode === 'admin' ? 'flex' : 'none';
+
+    const isAdmin = (mode === 'admin');
+    document.getElementById('adminControls').style.display = isAdmin ? 'flex' : 'none';
+
+    // ✅ 管理模式下：A 可見「發佈日誌」、B 隱藏「發佈日誌」
+    const btnPublishLog = document.getElementById('btnPublishLog');
+    if (btnPublishLog) btnPublishLog.style.display = (isAdmin && adminRole === "super") ? 'inline-flex' : 'none';
+
     render();
   };
 
@@ -1109,9 +1133,3 @@ if (!confirm(confirmMsg)) return;
 </script>
 </body>
 </html>
-
-
-
-
-
-
