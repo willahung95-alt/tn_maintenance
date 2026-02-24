@@ -411,7 +411,32 @@
 
   let pwdResolve = null;
 
-  // === UX helper: 判斷備註是否有內容、產生 hover 摘要 ===
+  function ensureQuill_() {
+    if (quill) return true;
+    alert('編輯器資源載入失敗（Quill 未載入）。\n\n請確認網路可連到 https://cdn.quilljs.com/ ，並重新整理頁面。');
+    return false;
+  }
+
+  function getActorName_() {
+    return (sessionStorage.getItem('actorName') || '').trim();
+  }
+  
+  function setActorName_(name) {
+    sessionStorage.setItem('actorName', (name || '').trim());
+  }
+  
+  function isSuper_() { return adminRole === 'super'; }
+  function isSalesAdmin_() { return adminRole === 'sales'; }
+  
+  function canManageRecord_(r) {
+    if (!r) return false;
+    if (isSuper_()) return true;
+    if (isSalesAdmin_()) {
+      const actor = getActorName_();
+      return !!actor && String(r.salesName || '') === actor;
+    }
+    return false;
+  }
   function hasMeaningfulNotes(html) {
     if (!html) return false;
     const s = String(html).trim();
@@ -431,21 +456,6 @@
       .replace(/[\r\n]+/g, '\n')
       .replace(/[\t ]+/g, ' ')
       .trim();
-  }
-
-  function truncateText(s, maxLen = 90) {
-    if (!s) return '';
-    const str = String(s);
-    return str.length > maxLen ? str.slice(0, maxLen - 1) + '…' : str;
-  }
-
-  function escapeAttr(s) {
-    return String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
   }
 
   function requestPassword(title = "請輸入系統密碼") {
@@ -574,11 +584,7 @@
         <tr>
           <td>
             <span style="font-weight:700;">${r.customer}</span>
-            ${hasNotes ? `
-              <span class="material-symbols-rounded note-indicator"
-data-tooltip="${noteTooltip}"
-                onclick="openEdit('${r.id}', true)">description</span>
-            ` : ''}
+           ${hasNotes ? `<span class="material-symbols-rounded note-indicator" data-tooltip="${noteTooltip}" onclick="openEdit('${r.id}', true)">description</span>` : ''}
           </td>
           <td>
             <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:4px;">${r.product}</div>
@@ -604,7 +610,7 @@ data-tooltip="${noteTooltip}"
           <td>
             <div style="display:flex; gap:6px; justify-content: flex-end;">
               ${sch ? `<button class="btn btn-outline" type="button" style="padding:4px" onclick="toggleDone('${r.id}','${ym}')"><span class="material-symbols-rounded" style="font-size:18px;">${(sch.isDone || sch.ym < currentYM)?'history':'done'}</span></button>` : ''}
-              ${mode === 'admin' ? `<button class="btn btn-outline" type="button" style="padding:4px" onclick="openEdit('${r.id}')"><span class="material-symbols-rounded" style="font-size:18px;">edit</span></button>` : ''}
+              ${mode === 'admin' && (isSuper_() || (isSalesAdmin_() && canManageRecord_(r))) ? `<button class="btn btn-outline" type="button" style="padding:4px" onclick="openEdit('${r.id}')"><span class="material-symbols-rounded" style="font-size:18px;">edit</span></button>` : ''}
             </div>
           </td>
         </tr>
@@ -630,27 +636,27 @@ data-tooltip="${noteTooltip}"
     try {
       const pwd = sessionStorage.getItem('sys_pwd');
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      const timeoutId = setTimeout(() => controller.abort(), 90000);
       
       let payload;
       
       if (editingId === VERSION_ID) {
+          if (!ensureQuill_()) throw new Error('Quill not ready');
           const verInput = document.getElementById('logVersionInput').value;
           if(!verInput) { alert("請輸入版本號"); throw new Error("無版本號"); }
 
           if (editingLogVersion) {
-             payload = { 
-               action: "editLog", 
-               data: { targetVersion: editingLogVersion, newVersion: verInput, content: quill.root.innerHTML } 
-             };
+             payload = { action: "editLog", data: { targetVersion: editingLogVersion, newVersion: verInput, content: quill.root.innerHTML } };
           } else {
-             payload = { 
-               action: "addLog", 
-               data: { version: verInput, content: quill.root.innerHTML } 
-             };
+             payload = { action: "addLog", data: { version: verInput, content: quill.root.innerHTML } };
           }
       } else {
-          payload = records; 
+          payload = { 
+            action: "saveRecords",
+            role: adminRole,
+            user: getActorName_() || (adminRole === "super" ? "Admin" : ""),
+            records: records
+          };
       }
 
       const resp = await fetch(`${API_URL}&pwd=${encodeURIComponent(pwd)}`, { 
@@ -662,21 +668,26 @@ data-tooltip="${noteTooltip}"
 
       if (!resp.ok) throw new Error("Network response was not ok");
       const result = await resp.json();
+      if (result.result === "busy") {
+        alert("目前系統忙碌（可能有人同時在存檔），請稍後再試一次。");
+        return;
+      }
       if (result.result === "error") throw new Error(result.message);
 
       // 儲存成功後重新讀取資料
       await load(); 
       
       // 修正重點：判斷是否為日誌編輯，如果是，回到「日誌列表」而不是關閉抽屜
-      if(editingId === VERSION_ID) {
-        openSystemLog('view'); 
-      } else {
-        closeDrawer(); 
-      }
+      if(editingId === VERSION_ID) { openSystemLog('view'); } else { closeDrawer(); }
       
     } catch (e) {
-      if(e.message !== "無版本號") {
-          alert("儲存程序已執行，但回應逾時或發生錯誤。\n請重新整理頁面確認資料是否正確更新。");
+      console.error("SAVE ERROR:", e);
+      if (e && e.name === "AbortError") {
+        alert("儲存逾時：系統回應較慢或有人同時在存檔，請稍後重試，或重新整理頁面確認資料是否已更新。");
+      } else if (e && e.message === "無版本號") {
+      } else {
+        const msg = (e && (e.message || e.toString())) ? (e.message || e.toString()) : "未知錯誤";
+        alert("儲存失敗：" + msg);
       }
     } finally {
       // 不論成功失敗，都強制重置按鈕文字與狀態
@@ -713,31 +724,27 @@ data-tooltip="${noteTooltip}"
     return out;
   }
 
- // 季維護：以「開始月份 +2」為第一個維護月，之後每 +3 個月一次，直到涵蓋訖月
-　function buildQuarterYMsByRange_(startDate, endDate) {
-　  const sy = startDate.getFullYear(), sm = startDate.getMonth();
-　  const ey = endDate.getFullYear(), em = endDate.getMonth();
-　  const startIdx = sy * 12 + sm;
-　  const endIdx = ey * 12 + em;
-　  if (startIdx > endIdx) return [];
+  function buildQuarterYMsByRange_(startDate, endDate) {
+    const sy = startDate.getFullYear(), sm = startDate.getMonth();
+    const ey = endDate.getFullYear(), em = endDate.getMonth();
+    const startIdx = sy * 12 + sm;
+    const endIdx = ey * 12 + em;
+    if (startIdx > endIdx) return [];
 
- 　 const out = [];
+    const out = [];
 
   // 第一個季維護月：開始月份 +2
 　  let idx = startIdx + 2;
 
   // 如果第一個季維護月已經超過維護訖月，則本期間不會有季維護月
-  while (idx <= endIdx) {
-    const y = Math.floor(idx / 12);
-    const m0 = idx % 12;
-    out.push(ymFromYearMonth_(y, m0));
-    idx += 3;
+    while (idx <= endIdx) {
+      const y = Math.floor(idx / 12);
+      const m0 = idx % 12;
+      out.push(ymFromYearMonth_(y, m0));
+      idx += 3;
+    }
+    return out;
   }
-
-  return out;
-}
-
-
   // 互斥：checkbox 行為像 radio
   function setCycleUI_(type) {
     const q = document.getElementById('cycleQuarter');
@@ -746,14 +753,11 @@ data-tooltip="${noteTooltip}"
     if (type === 'month') { m.checked = true; q.checked = false; }
     else { q.checked = true; m.checked = false; }
   }
-
-
   // 取得目前維護月份模式（季維護 / 月維護）
   function getCycleLabel_() {
     const isMonthly = document.getElementById('cycleMonth')?.checked;
     return isMonthly ? "月維護" : "季維護";
   }
-
 
   // 判斷既有月份清單是否為「每月連續」
   function isConsecutiveMonthly_(ymList) {
@@ -783,7 +787,6 @@ data-tooltip="${noteTooltip}"
     if (source === 'end') endDateManual = true;
 
     const startDate = new Date(startVal);
-
     let endVal = document.getElementById('endDate').value;
     if (!endVal || !endDateManual) {
       const endDateAuto = new Date(startVal);
@@ -839,11 +842,13 @@ data-tooltip="${noteTooltip}"
     document.getElementById('adminAction').style.display = 'block';
     editingId = id;
     const r = records.find(x => x.id === id) || { customer:"", product:"ee-class", salesName:"Willa", engineer:"", startDate:"", endDate:"", notes:"", schedule: [] };
-    const isViewOnly = forceReadOnly || mode === 'user';
+    const actor = getActorName_();
+    const isOwnerForSales = (!id) ? true : (String(r.salesName || '') === actor);
+    const isViewOnly = forceReadOnly || mode === 'user' || (isSalesAdmin_() && !isOwnerForSales);
     
     document.getElementById('adminOnlyFields').style.display = isViewOnly ? 'none' : 'block';
     document.getElementById('adminAction').style.display = isViewOnly ? 'none' : 'block';
-    document.getElementById('btnDelete').style.display = (isViewOnly || !id) ? 'none' : 'block';
+    document.getElementById('btnDelete').style.display = (!id || isViewOnly || !canManageRecord_(r)) ? 'none' : 'block';
     document.getElementById('drawerTitle').textContent = isViewOnly ? "備註內容" : (id ? "編輯維護" : "新增維護");
     
     if(isViewOnly) {
@@ -851,6 +856,7 @@ data-tooltip="${noteTooltip}"
       document.getElementById('note-viewer').style.display = 'block';
       document.getElementById('note-viewer').innerHTML = r.notes || "尚無備註";
     } else {
+      if (!ensureQuill_()) return;
       document.getElementById('editor-wrapper').style.display = 'block';
       document.getElementById('note-viewer').style.display = 'none';
       quill.root.innerHTML = r.notes || "";
@@ -859,6 +865,12 @@ data-tooltip="${noteTooltip}"
     document.getElementById('customer').value = r.customer || "";
     document.getElementById('product').value = r.product || "ee-class";
     document.getElementById('salesName').value = r.salesName || "Willa";
+    if (isSalesAdmin_()) {
+      if (actor) document.getElementById('salesName').value = actor;
+      document.getElementById('salesName').disabled = true;
+    } else {
+      document.getElementById('salesName').disabled = false;
+    }    
     document.getElementById('engineer').value = r.engineer || "";
     document.getElementById('startDate').value = r.startDate || "";
     document.getElementById('endDate').value = r.endDate || "";
@@ -884,7 +896,7 @@ data-tooltip="${noteTooltip}"
       return;
     }
 
-editingId = VERSION_ID;
+    editingId = VERSION_ID;
     document.getElementById('drawerTitle').textContent = "系統更新日誌";
     
     // === 檢視模式 ===
@@ -933,6 +945,7 @@ editingId = VERSION_ID;
         
         const today = new Date().toISOString().slice(0,10).replace(/-/g,'');
         document.getElementById('logVersionInput').value = "v" + today;
+        if (!ensureQuill_()) return;
         quill.root.innerHTML = ""; 
         document.getElementById('noteLabel').textContent = "本次更新內容";
     }
@@ -958,6 +971,7 @@ editingId = VERSION_ID;
       document.getElementById('note-viewer').style.display = 'none';
       
       document.getElementById('logVersionInput').value = log.version;
+      if (!ensureQuill_()) return;
       quill.root.innerHTML = log.content;
       document.getElementById('noteLabel').textContent = "編輯更新內容";
   }
@@ -997,12 +1011,21 @@ editingId = VERSION_ID;
         await save(); 
         return;
     }
-
-
-    // ====== ✅ 新增/編輯維護：必填檢查 + 儲存前確認 ======
+    
+    if (isSalesAdmin_()) {
+      const actor = getActorName_();
+      if (!actor) { alert("請先輸入您的業務姓名"); return; }
+      if (editingId) {
+        const target = records.find(x => x.id === editingId);
+        if (target && String(target.salesName || '') !== actor) {
+          alert("權限不足：僅能編輯自己的資料。");
+          return;
+        }
+      }
+    }
     const customer = document.getElementById('customer').value.trim();
     const product = document.getElementById('product').value.trim();
-    const salesName = document.getElementById('salesName').value.trim();
+    const salesName = isSalesAdmin_() ? getActorName_() : document.getElementById('salesName').value.trim();
     const engineer = document.getElementById('engineer').value.trim();
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
@@ -1043,9 +1066,10 @@ editingId = VERSION_ID;
       `維護工程師：${engineer}\n` +
       `維護起訖日：${startDate}~${endDate}\n` +
       cycleLabel;
-if (!confirm(confirmMsg)) return;
+    if (!confirm(confirmMsg)) return;
     // ====== ✅ 新增/編輯維護：必填檢查 + 儲存前確認（結束） ======
     
+    if (!ensureQuill_()) return;
     const rData = {
       id: editingId || 'ID-' + Date.now(),
       customer,
@@ -1084,8 +1108,19 @@ if (!confirm(confirmMsg)) return;
 
   function closeDrawer() { document.getElementById('drawer').classList.remove('open'); document.getElementById('overlay').style.display = 'none'; closeModal(); }
   function closeModal() { document.querySelectorAll('.modal').forEach(m => m.style.display = 'none'); document.getElementById('overlay').style.display = 'none'; }
-  document.getElementById('btnDelete').onclick = async () => { if(confirm("確定刪除此客戶？")) { records = records.filter(x => x.id !== editingId); await save(); closeDrawer(); } };
-
+  document.getElementById('btnDelete').onclick = async () => {
+    const r = records.find(x => x.id === editingId);
+    if (!r) return;
+    if (!canManageRecord_(r)) {
+      alert("權限不足：僅可刪除自己建立的資料。");
+      return;
+    }
+    if (confirm("確定刪除此客戶？")) {
+      records = records.filter(x => x.id !== editingId);
+      await save();
+      closeDrawer();
+    }
+  };
   document.getElementById('mSave').onclick = async () => {
     const r = records.find(x => x.id === modalTarget.id);
     const sch = r.schedule.find(s => s.ym === modalTarget.ym);
@@ -1102,9 +1137,22 @@ if (!confirm(confirmMsg)) return;
       const input = await requestPassword("管理者密碼");
       if (input === null) return;
 
-      if (input === ADMIN_PASSWORD_A) adminRole = "super";
-      else if (input === ADMIN_PASSWORD_B) adminRole = "sales";
-      else { alert("密碼錯誤"); return; }
+      if (input === ADMIN_PASSWORD_A) {
+        adminRole = "super";
+        setActorName_("Admin");
+      } else if (input === ADMIN_PASSWORD_B) {
+        adminRole = "sales";
+        const allowed = Array.from(document.querySelectorAll('#salesName option')).map(o => o.value);
+        const last = getActorName_();
+        const name = prompt("請輸入您的姓名（需與「業務」下拉一致，例如：" + allowed.join("、") + "）", last || "");
+        if (!name) { alert("未輸入姓名，已取消切換管理模式。"); return; }
+        const trimmed = name.trim();
+        if (!allowed.includes(trimmed)) { 
+          alert("姓名不在可選清單內，請輸入下拉選單中的名稱。");
+          return;
+        }
+        setActorName_(trimmed);
+      } else { alert("密碼錯誤"); return; }
     } else {
       adminRole = "user";
     }
@@ -1125,6 +1173,20 @@ if (!confirm(confirmMsg)) return;
   document.addEventListener('DOMContentLoaded', () => {
     quill = new Quill('#editor-container', { theme: 'snow', modules: { toolbar: [[{ 'size': ['small', false, 'large', 'huge'] }], ['bold', 'underline', 'link'], [{ 'color': [] }, { 'background': [] }], [{ 'list': 'ordered'}, { 'list': 'bullet' }], ['clean']] } });
     document.getElementById('monthPick').value = new Date().toISOString().slice(0, 7);
+       try {
+      if (typeof Quill !== 'undefined') {
+        quill = new Quill('#editor-container', {
+          theme: 'snow',
+          modules: {
+            toolbar: [[{ 'size': ['small', false, 'large', 'huge'] }], ['bold', 'underline', 'link'], [{ 'color': [] }, { 'background': [] }], [{ 'list': 'ordered'}, { 'list': 'bullet' }], ['clean']]
+          }
+        });
+      } else {
+        console.error('Quill is not loaded.');
+      }
+    } catch (e) {
+      console.error('Quill init failed:', e);
+    }
     load();
   });
   document.getElementById('q').oninput = render;
@@ -1133,3 +1195,4 @@ if (!confirm(confirmMsg)) return;
 </script>
 </body>
 </html>
+
