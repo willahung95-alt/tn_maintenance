@@ -1170,23 +1170,34 @@
     render();
   };
 
-  document.addEventListener('DOMContentLoaded', () => {
-    quill = new Quill('#editor-container', { theme: 'snow', modules: { toolbar: [[{ 'size': ['small', false, 'large', 'huge'] }], ['bold', 'underline', 'link'], [{ 'color': [] }, { 'background': [] }], [{ 'list': 'ordered'}, { 'list': 'bullet' }], ['clean']] } });
+document.addEventListener('DOMContentLoaded', () => {
+    // 1. 設定月份預設值
     document.getElementById('monthPick').value = new Date().toISOString().slice(0, 7);
-       try {
+
+    // 2. 初始化 Quill 編輯器 (只保留這一次)
+    try {
       if (typeof Quill !== 'undefined') {
         quill = new Quill('#editor-container', {
           theme: 'snow',
           modules: {
-            toolbar: [[{ 'size': ['small', false, 'large', 'huge'] }], ['bold', 'underline', 'link'], [{ 'color': [] }, { 'background': [] }], [{ 'list': 'ordered'}, { 'list': 'bullet' }], ['clean']]
+            toolbar: [
+              [{ 'size': ['small', false, 'large', 'huge'] }],
+              ['bold', 'underline', 'link'],
+              [{ 'color': [] }, { 'background': [] }],
+              [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+              ['clean']
+            ]
           }
         });
       } else {
         console.error('Quill is not loaded.');
+        alert('編輯器套件載入失敗，請檢查網路連線或重新整理。');
       }
     } catch (e) {
       console.error('Quill init failed:', e);
     }
+
+    // 3. 執行資料載入
     load();
   });
   document.getElementById('q').oninput = render;
@@ -1195,4 +1206,5 @@
 </script>
 </body>
 </html>
+
 
