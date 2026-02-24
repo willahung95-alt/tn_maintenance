@@ -1144,7 +1144,7 @@
         adminRole = "sales";
         const allowed = Array.from(document.querySelectorAll('#salesName option')).map(o => o.value);
         const last = getActorName_();
-        const name = prompt("請輸入您的姓名（需與「業務」下拉一致，例如：" + allowed.join("、") + "）", last || "");
+        const name = prompt("請輸入您的英文名（首字大寫，例如：" + allowed.join("、") + "）", last || "");
         if (!name) { alert("未輸入姓名，已取消切換管理模式。"); return; }
         const trimmed = name.trim();
         if (!allowed.includes(trimmed)) { 
@@ -1206,5 +1206,6 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 </body>
 </html>
+
 
 
